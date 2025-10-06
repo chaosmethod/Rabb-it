@@ -1,0 +1,387 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>Rabbit Reflex</title>
+    <!-- The entire application is contained within this single file. -->
+    <style>
+        /* * The styling is designed for the Rabbit R1's specific 240x282px screen.
+         * It uses a dark theme with high-contrast elements for visibility and performance.
+         */
+        :root {
+            --background-color: #1a1a1a;
+            --primary-text-color: #ffffff;
+            --accent-color: #ff7a00;
+            --highlight-color: #ff9a40;
+            --fail-color: #d93030;
+        }
+
+        body, html {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            background-color: var(--background-color);
+            color: var(--primary-text-color);
+            font-family: 'Arial', sans-serif;
+            -webkit-user-select: none; /* Disable text selection */
+            user-select: none;
+        }
+
+        .game-container {
+            width: 240px;
+            height: 282px;
+            margin: 0 auto;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            text-align: center;
+            position: relative;
+        }
+
+        .screen {
+            width: 100%;
+            height: 100%;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            padding: 20px;
+            box-sizing: border-box;
+        }
+
+        .hidden {
+            display: none !important;
+        }
+
+        /* Start and Game Over Screens */
+        .title {
+            font-size: 32px;
+            font-weight: bold;
+            color: var(--accent-color);
+            margin-bottom: 10px;
+        }
+
+        .instructions, .score-display {
+            font-size: 16px;
+            margin-bottom: 20px;
+            line-height: 1.4;
+        }
+        
+        .score-display .final-score {
+            color: var(--highlight-color);
+            font-size: 24px;
+            font-weight: bold;
+        }
+
+        .btn {
+            background-color: var(--accent-color);
+            color: var(--primary-text-color);
+            border: none;
+            padding: 12px 24px;
+            border-radius: 8px;
+            font-size: 18px;
+            font-weight: bold;
+            cursor: pointer;
+            transition: background-color 0.2s;
+        }
+
+        .btn:active {
+            background-color: var(--highlight-color);
+        }
+
+        /* Game Screen */
+        .game-ui {
+            width: 100%;
+            display: flex;
+            justify-content: space-between;
+            position: absolute;
+            top: 10px;
+            padding: 0 15px;
+            box-sizing: border-box;
+            font-size: 18px;
+        }
+
+        #command-display {
+            font-size: 36px;
+            font-weight: bold;
+            color: var(--primary-text-color);
+            height: 80px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .tap-area {
+            width: 180px;
+            height: 180px;
+            border: 4px dashed #555;
+            border-radius: 50%;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            transition: all 0.1s ease-in-out;
+        }
+        
+        .tap-area.active {
+            background-color: rgba(255, 122, 0, 0.2);
+            border-color: var(--accent-color);
+            transform: scale(1.05);
+        }
+
+        .timer-bar-container {
+            width: 80%;
+            height: 8px;
+            background-color: #333;
+            border-radius: 4px;
+            position: absolute;
+            bottom: 30px;
+        }
+
+        #timer-bar {
+            width: 100%;
+            height: 100%;
+            background-color: var(--accent-color);
+            border-radius: 4px;
+            transition: width 0.1s linear;
+        }
+    </style>
+</head>
+<body>
+
+    <div id="gameContainer" class="game-container">
+        
+        <!-- Start Screen -->
+        <div id="startScreen" class="screen">
+            <h1 class="title">Rabbit Reflex</h1>
+            <p class="instructions">Perform the action before time runs out!</p>
+            <button id="startButton" class="btn">Start Game</button>
+        </div>
+
+        <!-- Game Screen -->
+        <div id="gameScreen" class="screen hidden">
+            <div class="game-ui">
+                <div id="score">Score: 0</div>
+                <div id="highScoreLabel">High: 0</div>
+            </div>
+            <div id="commandDisplay" class="command-display"></div>
+            <div id="tapArea" class="tap-area"></div>
+             <div class="timer-bar-container">
+                <div id="timerBar"></div>
+            </div>
+        </div>
+
+        <!-- Game Over Screen -->
+        <div id="gameOverScreen" class="screen hidden">
+            <h1 class="title">Game Over</h1>
+            <div class="score-display">
+                Your Score: <span id="finalScore" class="final-score">0</span><br>
+                High Score: <span id="finalHighScore" class="final-score">0</span>
+            </div>
+            <button id="restartButton" class="btn">Play Again</button>
+        </div>
+
+    </div>
+
+    <script>
+        // --- DOM Elements ---
+        const startScreen = document.getElementById('startScreen');
+        const gameScreen = document.getElementById('gameScreen');
+        const gameOverScreen = document.getElementById('gameOverScreen');
+        
+        const startButton = document.getElementById('startButton');
+        const restartButton = document.getElementById('restartButton');
+        
+        const scoreDisplay = document.getElementById('score');
+        const highScoreLabel = document.getElementById('highScoreLabel');
+        const commandDisplay = document.getElementById('commandDisplay');
+        const tapArea = document.getElementById('tapArea');
+        const timerBar = document.getElementById('timerBar');
+
+        const finalScoreDisplay = document.getElementById('finalScore');
+        const finalHighScoreDisplay = document.getElementById('finalHighScore');
+
+        // --- Game State ---
+        let score = 0;
+        let highScore = 0;
+        let gameActive = false;
+        let currentCommand = null;
+        let commandTimeout;
+        let timerInterval;
+
+        const commands = ['Push It!', 'Scroll Up!', 'Scroll Down!', 'Tap It!'];
+        
+        // --- Mock Rabbit R1 SDK for Browser Testing ---
+        // In a real R1 environment, these objects and events are provided by the OS.
+        if (typeof window.creationStorage === 'undefined') {
+            console.log("SDK not found. Using mock storage for browser testing.");
+            window.creationStorage = {
+                plain: {
+                    _data: {},
+                    setItem: async function(key, value) { this._data[key] = value; },
+                    getItem: async function(key) { return this._data[key] || null; }
+                }
+            };
+
+            // Add key listeners to simulate R1 hardware events for testing
+            document.addEventListener('keydown', (e) => {
+                if (e.key === ' ') window.dispatchEvent(new Event('sideClick'));
+                if (e.key === 'ArrowUp') window.dispatchEvent(new Event('scrollUp'));
+                if (e.key === 'ArrowDown') window.dispatchEvent(new Event('scrollDown'));
+            });
+        }
+
+
+        // --- Game Logic ---
+
+        /**
+         * Initializes the game, loads high score, and sets up event listeners.
+         */
+        async function init() {
+            startButton.addEventListener('click', startGame);
+            restartButton.addEventListener('click', startGame);
+            
+            // Load high score from device storage
+            const savedHighScore = await window.creationStorage.plain.getItem('rabbitReflexHighScore');
+            if (savedHighScore) {
+                highScore = parseInt(savedHighScore, 10);
+            }
+            highScoreLabel.textContent = `High: ${highScore}`;
+            
+            console.log('Game Initialized. Press Start.');
+        }
+
+        /**
+         * Starts a new game session.
+         */
+        function startGame() {
+            console.log('Starting game...');
+            score = 0;
+            gameActive = true;
+            scoreDisplay.textContent = `Score: 0`;
+
+            startScreen.classList.add('hidden');
+            gameOverScreen.classList.add('hidden');
+            gameScreen.classList.remove('hidden');
+
+            nextCommand();
+        }
+
+        /**
+         * Ends the current game session.
+         */
+        async function endGame() {
+            if (!gameActive) return; // Prevent multiple calls
+            console.log('Game Over. Final Score:', score);
+            
+            gameActive = false;
+            clearTimeout(commandTimeout);
+            clearInterval(timerInterval);
+
+            // Update high score if necessary
+            if (score > highScore) {
+                highScore = score;
+                await window.creationStorage.plain.setItem('rabbitReflexHighScore', highScore.toString());
+                console.log('New high score saved:', highScore);
+            }
+
+            // Display final scores
+            finalScoreDisplay.textContent = score;
+            finalHighScoreDisplay.textContent = highScore;
+            highScoreLabel.textContent = `High: ${highScore}`;
+
+            gameScreen.classList.add('hidden');
+            gameOverScreen.classList.remove('hidden');
+        }
+
+        /**
+         * Selects and displays the next command.
+         */
+        function nextCommand() {
+            // Deactivate previous listeners to prevent cheating
+            removeActionListeners();
+            tapArea.classList.remove('active');
+
+            // Select a random command
+            currentCommand = commands[Math.floor(Math.random() * commands.length)];
+            commandDisplay.textContent = currentCommand;
+
+            // Here you would call the TTS API to speak the command
+            // This is a placeholder for the actual SDK call.
+            // PluginMessageHandler.postMessage(JSON.stringify({
+            //     message: `Say: ${currentCommand}`,
+            //     useLLM: true,
+            //     wantsR1Response: true
+            // }));
+            
+            // Activate the listener for the new command
+            activateActionListeners();
+            
+            // Set timer for the action
+            const timeLimit = Math.max(1000, 2500 - (score * 50)); // Time gets shorter as score increases
+            let timeLeft = timeLimit;
+            timerBar.style.transition = 'none'; // Reset transition for instant update
+            timerBar.style.width = '100%';
+
+            setTimeout(() => {
+                timerBar.style.transition = `width ${timeLimit / 1000}s linear`;
+                timerBar.style.width = '0%';
+            }, 20);
+
+            clearTimeout(commandTimeout);
+            commandTimeout = setTimeout(endGame, timeLimit);
+        }
+        
+        /**
+         * Attaches the correct event listener based on the current command.
+         */
+        function activateActionListeners() {
+            switch (currentCommand) {
+                case 'Push It!':
+                    window.addEventListener('sideClick', handleSuccess);
+                    break;
+                case 'Scroll Up!':
+                    window.addEventListener('scrollUp', handleSuccess);
+                    break;
+                case 'Scroll Down!':
+                    window.addEventListener('scrollDown', handleSuccess);
+                    break;
+                case 'Tap It!':
+                    tapArea.classList.add('active');
+                    tapArea.addEventListener('click', handleSuccess);
+                    break;
+            }
+        }
+        
+        /**
+         * Removes all hardware/touch event listeners.
+         */
+        function removeActionListeners() {
+            window.removeEventListener('sideClick', handleSuccess);
+            window.removeEventListener('scrollUp', handleSuccess);
+            window.removeEventListener('scrollDown', handleSuccess);
+            tapArea.removeEventListener('click', handleSuccess);
+        }
+
+        /**
+         * Handles a successful action, updates score, and moves to the next command.
+         */
+        function handleSuccess() {
+            if (!gameActive) return;
+            
+            score++;
+            scoreDisplay.textContent = `Score: ${score}`;
+            
+            clearTimeout(commandTimeout);
+            nextCommand();
+        }
+
+        // --- Start the game logic ---
+        init();
+
+    </script>
+</body>
+</html>
